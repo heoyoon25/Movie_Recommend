@@ -6,6 +6,7 @@
 이미지 조회에 실패해도 영화 설명과 테스트는 정상 동작합니다.
 """
 
+import hmac
 from collections import Counter
 from io import BytesIO
 from pathlib import Path
@@ -22,6 +23,62 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed",
 )
+
+# ──────────────────────────── 접속 비밀번호 확인 ────────────────────────────
+# 비밀번호는 GitHub에 올리지 말고 Streamlit Community Cloud > App settings > Secrets에
+# APP_PASSWORD = "사용자가_정한_비밀번호" 형식으로 등록해야 합니다.
+def require_password():
+    try:
+        expected = st.secrets["APP_PASSWORD"]
+    except (FileNotFoundError, KeyError):
+        st.error("접속 비밀번호 설정이 누락되었습니다.")
+        st.info(
+            "Streamlit Community Cloud의 앱 설정 > Secrets에 "
+            "APP_PASSWORD를 등록하세요. 이 값은 GitHub에 업로드하지 마세요."
+        )
+        st.stop()
+
+    if not isinstance(expected, str) or not expected.strip():
+        st.error("APP_PASSWORD는 비어 있지 않은 문자열이어야 합니다.")
+        st.stop()
+
+    if st.session_state.get("_cinetype_authenticated", False):
+        return
+
+    st.markdown("""
+    <style>
+      [data-testid="stAppViewContainer"] {
+        background: radial-gradient(circle at 85% 5%, #fff0f5 0, transparent 38%),
+                    radial-gradient(circle at 15% 0, #eef0ff 0, transparent 42%), #fafbff;
+      }
+      .block-container {max-width: 900px; padding-top: 9vh;}
+      .login-heading {text-align:center;font-size:2.45rem;font-weight:900;
+                      color:#312a67;letter-spacing:-.04em;margin:0 0 .5rem;}
+      .login-description {text-align:center;color:#706c8b;line-height:1.8;margin-bottom:2rem;}
+    </style>
+    """, unsafe_allow_html=True)
+    st.markdown('<div class="login-heading">🎬 CineType</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="login-description">나의 영화 취향은 무엇일까요?<br>'
+        '테스트를 시작하려면 비밀번호를 입력해 주세요.</div>',
+        unsafe_allow_html=True,
+    )
+    col_left, col_center, col_right = st.columns([1, 1.4, 1])
+    with col_center:
+        with st.form("cinetype_login_form", clear_on_submit=False):
+            supplied = st.text_input("접속 비밀번호", type="password", placeholder="비밀번호 입력")
+            submitted = st.form_submit_button("테스트 입장하기 →", type="primary", use_container_width=True)
+        if submitted:
+            if hmac.compare_digest(supplied, expected):
+                st.session_state["_cinetype_authenticated"] = True
+                st.rerun()
+            else:
+                st.error("비밀번호가 올바르지 않습니다.")
+    st.stop()
+
+
+require_password()
+
 
 # ──────────────────────────── 1. 질문과 결과 유형 ────────────────────────────
 # 3가지 대립 성향을 각 4번씩 질문합니다. 2:2 동점이면 해당 축의 첫 답으로 판정합니다.
@@ -434,7 +491,14 @@ def show_dna(scores):
 
 
 # ─────────────────────────────── 6. 페이지 UI ────────────────────────────────
-st.markdown('<div class="brand">◉ CineType <span style="font-size:.7rem;color:#9a92b7;font-weight:600;">MOVIE PERSONALITY</span></div>', unsafe_allow_html=True)
+brand_col, logout_col = st.columns([5, 1], vertical_alignment="center")
+with brand_col:
+    st.markdown('<div class="brand">◉ CineType <span style="font-size:.7rem;color:#9a92b7;font-weight:600;">MOVIE PERSONALITY</span></div>', unsafe_allow_html=True)
+with logout_col:
+    if st.button("로그아웃", use_container_width=True):
+        st.session_state.pop("_cinetype_authenticated", None)
+        reset_test()
+        st.rerun()
 st.write("")
 
 if st.session_state.stage == -1:
